@@ -16,7 +16,7 @@ public interface CategoryService {
     PageResult pageQuery(CategoryPageQueryDTO categoryPageQueryDTO);
 
     /**
-     * 启用禁用分类
+     * 修改分类
      * @param status
      * @param id
      */

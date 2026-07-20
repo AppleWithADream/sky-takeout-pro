@@ -19,15 +19,11 @@
     <update id="update">
         update category
         <set>
-            <if test="name != null">
-                name = #{name},
-            </if>
-            <if test="sort != null">
-                sort = #{sort},
-            </if>
-            <if test="status != null">
-                status = #{status},
-            </if>
+            <if test="name != null"> name = #{name} ,</if>
+            <if test="sort != null">sort = #{sort} ,</if>
+            <if test="status != null">status = #{status}, </if>
+            <if test="updateTime != null">update_Time = #{updateTime},</if>
+            <if test="updateUser != null">update_User = #{updateUser},</if>
         </set>
         where id = #{id}
     </update>

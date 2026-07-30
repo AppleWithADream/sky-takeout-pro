@@ -46,4 +46,5 @@ public interface CategoryService {
      * @return
      */
     List<Category> getList(Long type);
+
 }

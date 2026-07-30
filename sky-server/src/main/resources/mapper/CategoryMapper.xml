@@ -15,6 +15,15 @@
         </where>
     </select>
 
+    <select id="getList" resultType="com.sky.entity.Category">
+        select * from category
+        <where>
+            <if test="type != null">
+                type = #{type}
+            </if>
+        </where>
+    </select>
+
 
     <update id="update">
         update category

@@ -57,6 +57,5 @@ public interface CategoryMapper {
      * @param type
      * @return
      */
-    @Select("SELECT * FROM category WHERE type = #{type}")
     List<Category> getList(Long type);
 }

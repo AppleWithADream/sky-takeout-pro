@@ -91,4 +91,17 @@ public class OrderController {
         orderService.repetition(id);
         return Result.success();
     }
+
+    /**
+     * 订单催单
+     * @param id
+     * @return
+     */
+    @GetMapping("/reminder/{id}")
+    @ApiOperation("订单催单")
+    public Result reminder(@PathVariable("id") Long id) {
+        log.info("订单催单");
+        orderService.reminder(id);
+        return Result.success();
+    }
 }

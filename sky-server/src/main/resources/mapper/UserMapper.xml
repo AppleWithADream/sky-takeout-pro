@@ -8,4 +8,19 @@
         values (#{openid}, #{name}, #{phone}, #{sex}, #{idNumber}, #{avatar}, #{createTime})
     </insert>
 
+    <select id="countTotalUserBeforeTime" resultType="java.lang.Integer">
+        select count(id) from user
+        where create_time &lt; #{time}
+    </select>
+
+    <select id="countNewUserByDay" resultType="java.util.Map">
+        select
+            DATE(create_time) as day,
+            count(id) as newUser
+        from user
+        where create_time &gt;= #{start} and create_time &lt;= #{end}
+        group by DATE(create_time)
+        order by day
+    </select>
+
 </mapper>

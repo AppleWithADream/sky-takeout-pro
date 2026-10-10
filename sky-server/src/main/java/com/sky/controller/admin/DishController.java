@@ -13,6 +13,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.RedisCallback;
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+
 
 import java.util.List;
 import java.util.Set;
@@ -29,7 +35,8 @@ public class DishController {
     @Autowired
     private DishService dishService;
     @Autowired
-    private RedisTemplate redisTemplate;
+    // 改成
+    private RedisTemplate<String, Object> redisTemplate;
     /**
     * 新增菜品
     * @param dishDTO
@@ -72,8 +79,13 @@ public class DishController {
         dishService.deleteBatch(ids);
 
         //将所有的菜品缓存数据清理掉，所有以dish_开头的缓存数据
-        Set keys = redisTemplate.keys("dish_*");
-        redisTemplate.delete(keys);
+        // keys实现：简单粗暴，全库扫描，阻塞Redis，**仅开发环境测试使用，禁止上线**
+        /*Set keys = redisTemplate.keys("dish_*");
+        redisTemplate.delete(keys);*/
+
+        //SCAN 游标遍历删除匹配的 key，替代 keys（避免阻塞 Redis 单线程）
+        deleteKeysByPattern("dish_*");
+
         return Result.success();
     }
 
@@ -101,9 +113,15 @@ public class DishController {
         log.info("修改菜品：{}", dishDTO);
         dishService.updateWithFlavor(dishDTO);
 
+
         //将所有的菜品缓存数据清理掉，所有以dish_开头的缓存数据
-        Set keys = redisTemplate.keys("dish_*");
-        redisTemplate.delete(keys);
+        // keys实现：简单粗暴，全库扫描，阻塞Redis，**仅开发环境测试使用，禁止上线**
+        /*Set keys = redisTemplate.keys("dish_*");
+        redisTemplate.delete(keys);*/
+
+        //SCAN 游标遍历删除匹配的 key，替代 keys（避免阻塞 Redis 单线程）
+        deleteKeysByPattern("dish_*");
+
         return Result.success();
     }
 
@@ -120,8 +138,12 @@ public class DishController {
         dishService.startOrStop(status, id);
 
         //将所有的菜品缓存数据清理掉，所有以dish_开头的缓存数据
-        Set keys = redisTemplate.keys("dish_*");
-        redisTemplate.delete(keys);
+        // keys实现：简单粗暴，全库扫描，阻塞Redis，**仅开发环境测试使用，禁止上线**
+        /*Set keys = redisTemplate.keys("dish_*");
+        redisTemplate.delete(keys);*/
+
+        //SCAN 游标遍历删除匹配的 key，替代 keys（避免阻塞 Redis 单线程）
+        deleteKeysByPattern("dish_*");
 
         return Result.success();
     }
@@ -137,4 +159,29 @@ public class DishController {
         List<Dish> dishList = dishService.list(categoryId);
         return Result.success(dishList);
     }
+
+    /**
+     * SCAN 游标遍历删除匹配的 key，替代 KEYS。
+     * KEYS：一条命令全库扫描，长时间独占 Redis 单线程 → 其他请求全部排队
+     * SCAN：拆成多次小批量执行，每次阻塞很短 → 其他请求几乎无感
+     * 注意：SCAN 的【总耗时】不比 KEYS 少（甚至更长），它买到的是"可响应性"，不是"更快"。
+     *      本方法最后仍是一次性 delete，删除阶段仍会阻塞，留待后续优化。
+     * @param pattern key 匹配模式，如 "dish_*"
+     */
+    private void deleteKeysByPattern(String pattern) {
+        Set<String> keys = redisTemplate.execute((RedisCallback<Set<String>>) connection -> {
+            Set<String> result = new HashSet<>();
+            try (Cursor<byte[]> cursor = connection.scan(
+                    ScanOptions.scanOptions().match(pattern).count(5000).build())) {
+                while (cursor.hasNext()) {
+                    result.add(new String(cursor.next(), StandardCharsets.UTF_8));
+                }
+            }
+            return result;
+        });
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
+    }
+
 }

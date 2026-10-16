@@ -1,5 +1,8 @@
 package com.sky.service.impl;
 
+import com.sky.mq.MqConstants;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import com.alibaba.fastjson.JSON;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
@@ -36,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class OrderServiceImpl implements OrderService {
     @Autowired
@@ -48,6 +52,8 @@ public class OrderServiceImpl implements OrderService {
     private ShoppingCartMapper shoppingCartMapper;
     @Autowired
     private WebSocketServer webSocketServer;
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
     /**
      * 用户下单
      * @param ordersSubmitDTO
@@ -121,6 +127,14 @@ public class OrderServiceImpl implements OrderService {
         map.put("content","订单号:"+orders.getNumber());
         String josn = JSON.toJSONString(map);
         webSocketServer.sendToAllClient(josn);
+
+        // 发送订单超时延迟消息：15 分钟后由 OrderTimeoutListener 检查支付状态
+        rabbitTemplate.convertAndSend(
+                MqConstants.ORDER_DELAY_EXCHANGE,
+                MqConstants.ORDER_DELAY_ROUTING_KEY,
+                orders.getId());
+        log.info("已发送订单超时延迟消息，orderId={}，15 分钟后检查支付状态", orders.getId());
+
         return orderSubmitVO;
     }
 

@@ -46,6 +46,8 @@ logging:
         controller: info
 
 sky:
+  cache:
+    mq-enabled: true   # true=MQ 异步删缓存；false=回退同步 SCAN 删缓存
   jwt:
     # 设置jwt签名加密时使用的秘钥
     admin-secret-key: itcast

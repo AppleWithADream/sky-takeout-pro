@@ -18,6 +18,9 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.RedisCallback;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import com.sky.mq.CacheMqConstants;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 
 
 import java.util.List;
@@ -37,6 +40,12 @@ public class DishController {
     @Autowired
     // 改成
     private RedisTemplate<String, Object> redisTemplate;
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+
+    /** 缓存删除开关：true=MQ 异步删（默认）；false=回退同步 SCAN 删（旧逻辑保留） */
+    @Value("${sky.cache.mq-enabled:true}")
+    private boolean cacheMqEnabled;
     /**
     * 新增菜品
     * @param dishDTO
@@ -49,8 +58,11 @@ public class DishController {
         dishService.saveWithFlavor(dishDTO);
 
         //清理缓存数据
-        String key = "dish_" + dishDTO.getCategoryId();
-        redisTemplate.delete(key);
+        /*String key = "dish_" + dishDTO.getCategoryId();
+        redisTemplate.delete(key);*/
+
+        //清理缓存数据
+        cleanCache("dish_" + dishDTO.getCategoryId());
         return Result.success();
     }
 
@@ -84,7 +96,10 @@ public class DishController {
         redisTemplate.delete(keys);*/
 
         //SCAN 游标遍历删除匹配的 key，替代 keys（避免阻塞 Redis 单线程）
-        deleteKeysByPattern("dish_*");
+        //deleteKeysByPattern("dish_*");
+
+        // 改走 MQ 异步删（开关可切回同步 SCAN）
+        cleanCache("dish_*");
 
         return Result.success();
     }
@@ -120,7 +135,10 @@ public class DishController {
         redisTemplate.delete(keys);*/
 
         //SCAN 游标遍历删除匹配的 key，替代 keys（避免阻塞 Redis 单线程）
-        deleteKeysByPattern("dish_*");
+        //deleteKeysByPattern("dish_*");
+
+        // 改走 MQ 异步删（开关可切回同步 SCAN）
+        cleanCache("dish_*");
 
         return Result.success();
     }
@@ -143,7 +161,10 @@ public class DishController {
         redisTemplate.delete(keys);*/
 
         //SCAN 游标遍历删除匹配的 key，替代 keys（避免阻塞 Redis 单线程）
-        deleteKeysByPattern("dish_*");
+        //deleteKeysByPattern("dish_*");
+
+        // 改走 MQ 异步删（开关可切回同步 SCAN）
+        cleanCache("dish_*");
 
         return Result.success();
     }
@@ -159,6 +180,27 @@ public class DishController {
         List<Dish> dishList = dishService.list(categoryId);
         return Result.success(dishList);
     }
+
+    /**
+     * 清理菜品缓存（开关控制）
+     * MQ 开（默认）→ 发消息给 CacheDeleteListener 异步删
+     *                 · 接口不再依赖 Redis 的实时可用性
+     *                 · 删失败自动重试 5 次，耗尽进死信队列
+     * MQ 关        → 走旧的同步 SCAN 删（deleteKeysByPattern 原样保留）
+     * @param pattern 要删除的 key 或匹配模式，如 "dish_5" / "dish_*"
+     */
+    private void cleanCache(String pattern) {
+        if (cacheMqEnabled) {
+            rabbitTemplate.convertAndSend(
+                    CacheMqConstants.CACHE_EXCHANGE,
+                    CacheMqConstants.CACHE_DISH_ROUTING_KEY,
+                    pattern);
+            log.info("已发缓存删除消息：pattern={}", pattern);
+        } else {
+            deleteKeysByPattern(pattern);
+        }
+    }
+
 
     /**
      * SCAN 游标遍历删除匹配的 key，替代 KEYS。

@@ -30,7 +30,7 @@ public class MqConfig {
     @Bean
     public Queue orderDelayQueue() {
         return QueueBuilder.durable(MqConstants.ORDER_DELAY_QUEUE)
-                .ttl(15 * 60 * 1000)                                         // 15 分钟（毫秒）
+                .ttl(15 * 60 * 1000)                               // 15 分钟（毫秒）
                 .deadLetterExchange(MqConstants.ORDER_DLX_EXCHANGE)          // 到期后进哪个交换机
                 .deadLetterRoutingKey(MqConstants.ORDER_TIMEOUT_ROUTING_KEY) // 用什么路由键
                 .build();
@@ -50,10 +50,18 @@ public class MqConfig {
         return new DirectExchange(MqConstants.ORDER_DLX_EXCHANGE, true, false);
     }
 
-    /** 5. 超时处理队列 */
+    /**
+     * 5. 超时处理队列
+     *    · 业务异常被 basicReject(requeue=false) 后，消息【直接消失】
+     *    · 消息读不懂（框架级 Fatal）时，消息【卡在 Unacked】，把消费者占死
+     */
+
     @Bean
     public Queue orderTimeoutQueue() {
-        return QueueBuilder.durable(MqConstants.ORDER_TIMEOUT_QUEUE).build();
+        return QueueBuilder.durable(MqConstants.ORDER_TIMEOUT_QUEUE)
+                .deadLetterExchange(MqConstants.ORDER_DLX_EXCHANGE)
+                .deadLetterRoutingKey(MqConstants.ORDER_FAILED_ROUTING_KEY)
+                .build();
     }
 
     /** 6. 绑定：死信交换机 → 超时处理队列 */
@@ -64,8 +72,49 @@ public class MqConfig {
                 .with(MqConstants.ORDER_TIMEOUT_ROUTING_KEY);
     }
 
+
     /**
-     * 7. JSON 消息转换器
+     * 7. 重试队列：TTL 30 秒，到期后回到超时处理队列重试
+     * ⚠️【故意不配消费者】—— 它的唯一作用就是"让消息等 30 秒"。
+     *    配了消费者就变成"立刻处理"，失去延迟重试的意义。
+     */
+    @Bean
+    public Queue orderRetryQueue() {
+        return QueueBuilder.durable(MqConstants.ORDER_RETRY_QUEUE)
+                .ttl(30 * 1000)                                              // 等 30 秒
+                .deadLetterExchange(MqConstants.ORDER_DLX_EXCHANGE)          // 到期后回死信交换机
+                .deadLetterRoutingKey(MqConstants.ORDER_TIMEOUT_ROUTING_KEY) // 路由到【超时队列】重试
+                .build();
+    }
+
+    /** 8. 绑定：死信交换机 -> 重试队列（路由键 sky.order.retry） */
+    @Bean
+    public Binding orderRetryBinding(Queue orderRetryQueue, DirectExchange orderDlxExchange) {
+        return BindingBuilder.bind(orderRetryQueue)
+                .to(orderDlxExchange)
+                .with(MqConstants.ORDER_RETRY_ROUTING_KEY);
+    }
+
+    /**
+     * 9. 最终失败队列：重试次数用尽后进这里
+     * ⚠️ 也【不配消费者】—— 它代表"系统自动处理不了的异常"，本来就该人工介入。
+     *    生产环境建议加"队列堆积告警"（比如 Ready 超过 100 就发通知）。
+     */
+    @Bean
+    public Queue orderFailedQueue() {
+        return QueueBuilder.durable(MqConstants.ORDER_FAILED_QUEUE).build();
+    }
+
+    /** 10. 绑定：死信交换机 -> 最终失败队列（路由键 sky.order.failed） */
+    @Bean
+    public Binding orderFailedBinding(Queue orderFailedQueue, DirectExchange orderDlxExchange) {
+        return BindingBuilder.bind(orderFailedQueue)
+                .to(orderDlxExchange)
+                .with(MqConstants.ORDER_FAILED_ROUTING_KEY);
+    }
+
+    /**
+     * 11. JSON 消息转换器
      */
     @Bean
     public MessageConverter messageConverter(ObjectMapper objectMapper) {

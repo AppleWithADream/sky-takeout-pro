@@ -5,16 +5,16 @@ sky:
     port: 3306
     database: sky_take_out
     username: root
-    password: li161218
+    password: your-password
   alioss:
     endpoint: oss-cn-beijing.aliyuncs.com
-    access-key-id: LTAI5t9mBCmv8L37kVUFhPoB
-    access-key-secret: i5QFgsK8Tj2ReIZQYdvnmNENAznfeZ
-    bucket-name: java---ai--li
+    access-key-id: your-access-key-id
+    access-key-secret: your-access-key-secret
+    bucket-name: your-bucket-name
   redis:
     host: localhost
     port: 6379
     database: 0
   wechat:
-    appid: wxc93c7dc6bd381eba
-    secret: 3ac077464f8186d951c5665cefe5eba9
+    appid: your-appid
+    secret: your-secret

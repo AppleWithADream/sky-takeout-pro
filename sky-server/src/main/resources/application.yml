@@ -50,12 +50,12 @@ sky:
     mq-enabled: true   # true=MQ 异步删缓存；false=回退同步 SCAN 删缓存
   jwt:
     # 设置jwt签名加密时使用的秘钥
-    admin-secret-key: itcast
+    admin-secret-key: sky-admin-jwt-2026
     # 设置jwt过期时间
     admin-ttl: 7200000
     # 设置前端传递过来的令牌名称
     admin-token-name: token
-    user-secret-key: itheima
+    user-secret-key: sky-user-jwt-2026
     user-ttl: 7200000
     user-token-name: authentication
   alioss:

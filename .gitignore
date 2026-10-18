@@ -2,5 +2,9 @@
 .idea
 *.iml
 *.class
-*Test.java
-**/test/
+
+### 测试类默认忽略，只放行这三个
+sky-server/src/test/java/com/sky/test/*.java
+!sky-server/src/test/java/com/sky/test/OrderTimeoutTestDataSupportTest.java
+!sky-server/src/test/java/com/sky/test/CacheDeleteTestDataSupportTest.java
+!sky-server/src/test/java/com/sky/test/RedisKeysVsScanBenchmarkTest.java

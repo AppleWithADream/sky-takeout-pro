@@ -75,7 +75,20 @@ try (Cursor<byte[]> cursor = connection.scan(
 | 吞吐量 | 8058/s | **5660/s** | **9891/s** |
 | 清理操作耗时 | — | 955ms | 582ms |
 
+> 说明：这里的「清理操作耗时」指 JMeter 触发清理的那个 POST 请求耗时（报告里 Label 为 `POST触发缓存清理`），
+> 也就是一次清理从发出到返回的实际耗时；「p99 / 最大响应 / 吞吐量」是同期受害者接口 `GET /user/shop/status` 的表现。
+
 **结论**：`KEYS` 一次扫描独占 Redis 约 955ms，导致 p99 翻倍、吞吐掉 30%；改用 `SCAN` 后 p99 回落到 5ms（低于基线），吞吐恢复到 9891/s。
+
+**证据截图**（JMeter 聚合报告，左为受害者组、右为触发清理的凶手组）
+
+`KEYS` 阻塞组：吞吐 5660/s，p99 16ms，最大 384ms，清理请求耗时 955ms
+
+![KEYS 阻塞组](docs/images/01-keys-blocking.png)
+
+`SCAN` 优化组：吞吐 9891/s，p99 5ms，最大 191ms，清理请求耗时 582ms
+
+![SCAN 优化组](docs/images/02-scan-optimized.png)
 
 ---
 
@@ -159,7 +172,18 @@ try (Cursor<byte[]> cursor = connection.scan(
 | t=40s | 第 2 次失败 | 1→0→1 |
 | t=70s | 第 3 次失败 | —— |
 | t=100s | 第 4 次失败，转入最终失败队列 | `failed.queue` Ready=1 |
-| 全程 | —— | `timeout.queue` 的 **Unacked 始终为 0**（消息未卡住）|
+| 全程 | —— | `timeout.queue` 的 **Unacked 归 0**（消息有归宿，未卡死）|
+
+> 说明：改造前遇到的问题是消费者抛异常后既不 ACK 也不 reject，消息一直挂在 Unacked，
+> 而 `prefetch=1` 意味着消费者拿不到下一条，整个消费链路停摆（实测 `Ready=1 / Unacked=1`）。
+> 改造后每条失败消息都会被投递到 retry 或 failed 队列，消费者线程始终能释放，
+> 重试结束后 `timeout.queue` 的 Unacked 回到 0。
+
+**证据截图**（`sky.order.timeout.queue` 管理页，注意中间两个投递尖峰 = 重试回流的两次投递）
+
+Unacked = 0、Ready = 0、Total = 0，死信指向 `sky.order.dlx.exchange` / `sky.order.failed`，消费者 1 个在线
+
+![timeout queue 无消息卡死](docs/images/04-timeout-queue-unacked0.png)
 
 ---
 
@@ -212,6 +236,11 @@ sky.cache.dish.queue ──→ CacheDeleteListener（SCAN 遍历删除）
 | 失败重试 | 停掉 Redis → 重试 5 次（间隔 1s/2s/4s/8s）→ `RejectAndDontRequeueRecoverer: Retries exhausted` → 进死信队列 |
 | 消费者未卡死 | 重试全程原队列 `Unacked` 最终归 0 |
 | 真实前端操作 | 管理端改菜品 → 数据库更新 → Controller 发消息 → 消费者删缓存，全链路贯通 |
+
+**证据截图**（管理端真实改一个菜品，应用日志里可以看到完整链路：
+`修改菜品` → `已发缓存删除消息：pattern=dish_*` → `收到缓存删除消息` → `缓存删除完成，删除 5 个 key`）
+
+![缓存删除 MQ 全链路](docs/images/03-cache-delete-mq.png)
 
 **代价说明**
 
